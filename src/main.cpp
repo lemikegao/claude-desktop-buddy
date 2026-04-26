@@ -12,8 +12,10 @@
 #include "daystats.h"
 
 // PersonaState ordering matches upstream: 0=sleep, 1=idle, 2=busy,
-// 3=attention, 4=celebrate, 5=dizzy, 6=heart. Phase B only drives 1/2/3.
-enum PersonaState { P_SLEEP = 0, P_IDLE = 1, P_BUSY = 2, P_ATTENTION = 3 };
+// 3=attention, 4=celebrate, 5=dizzy, 6=heart. Phase B only drives 1/2/3;
+// dizzy is triggered by shake-to-dizzy below.
+enum PersonaState { P_SLEEP = 0, P_IDLE = 1, P_BUSY = 2, P_ATTENTION = 3,
+                    P_CELEBRATE = 4, P_DIZZY = 5, P_HEART = 6 };
 
 const int W = 135, H = 240;
 M5Canvas spr(&M5.Display);
@@ -41,6 +43,20 @@ const int TEXT_TOP = 170;
 // How long the species sound text replaces the stats block after BtnA.
 const uint32_t SPECIES_FLASH_MS = 1000;
 static uint32_t speciesFlashUntilMs = 0;
+
+// Shake-to-dizzy: when the IMU detects a shake (multiple acceleration peaks
+// within a short window), force the buddy into the dizzy state for a few
+// seconds regardless of whatever heartbeat-driven persona would otherwise
+// apply. Tuned for "kid grabs the stick and waggles it," not "device gets
+// bumped on the desk."
+const float    SHAKE_PEAK_G        = 1.7f;   // |accel| (in g) that counts as a peak
+const uint32_t SHAKE_WINDOW_MS     = 700;    // peaks must cluster within this window
+const uint8_t  SHAKE_MIN_PEAKS     = 3;      // …and there must be at least this many
+const uint32_t DIZZY_DURATION_MS   = 4000;   // how long dizzy persists after a shake
+static uint32_t shakeWindowStartMs = 0;
+static uint8_t  shakePeakCount     = 0;
+static float    shakePrevMag       = 1.0f;
+static uint32_t dizzyUntilMs       = 0;
 
 // Idle screen-off. After this many ms with no button press AND Claude not
 // actively running/attention, kill the backlight. Any button or a state
@@ -239,10 +255,39 @@ static bool snapshotFresh() {
 }
 
 static uint8_t personaFromState() {
+  // Shake-induced dizzy wins over everything — kids should get the
+  // animation feedback even mid-busy.
+  if (dizzyUntilMs && (int32_t)(millis() - dizzyUntilMs) < 0) return P_DIZZY;
   if (!snapshotFresh())   return P_IDLE;     // offline → idle, never sad
   if (sessionsWaiting > 0) return P_ATTENTION;
   if (sessionsRunning > 0) return P_BUSY;
   return P_IDLE;
+}
+
+// Read the IMU and detect a shake gesture. A "peak" is a rising edge across
+// SHAKE_PEAK_G in accelerometer magnitude; SHAKE_MIN_PEAKS peaks within
+// SHAKE_WINDOW_MS triggers dizzy. The peak/edge approach (vs a raw threshold)
+// rejects a single sharp tap and requires actual back-and-forth motion.
+static void pollShake() {
+  if (!M5.Imu.update()) return;
+  float ax = 0, ay = 0, az = 0;
+  M5.Imu.getAccel(&ax, &ay, &az);
+  float mag = sqrtf(ax * ax + ay * ay + az * az);
+  uint32_t now = millis();
+  if (mag > SHAKE_PEAK_G && shakePrevMag <= SHAKE_PEAK_G) {
+    if (now - shakeWindowStartMs > SHAKE_WINDOW_MS) {
+      shakePeakCount = 0;
+      shakeWindowStartMs = now;
+    }
+    shakePeakCount++;
+    if (shakePeakCount >= SHAKE_MIN_PEAKS) {
+      dizzyUntilMs = now + DIZZY_DURATION_MS;
+      shakePeakCount = 0;
+      wake();
+      Serial.println("[shake] dizzy!");
+    }
+  }
+  shakePrevMag = mag;
 }
 
 // Default render of the y>=170 region: buddy display name big, then a rule,
@@ -387,6 +432,7 @@ void loop() {
   }
 
   pollBle();
+  pollShake();
   daystatsTick(sessionsRunning, snapshotFresh());
 
   // Snapshot before wake() so we can tell whether *this* press was a
@@ -415,7 +461,8 @@ void loop() {
   if (persona != lastPersona) {
     Serial.printf("[state] %s (running=%u waiting=%u fresh=%d)\n",
                   persona == P_BUSY ? "busy" :
-                  persona == P_ATTENTION ? "attention" : "idle",
+                  persona == P_ATTENTION ? "attention" :
+                  persona == P_DIZZY ? "dizzy" : "idle",
                   sessionsRunning, sessionsWaiting, snapshotFresh());
     // Non-idle transitions are interesting → wake the screen so the user
     // sees the buddy come to life. Going-to-idle does NOT wake.
