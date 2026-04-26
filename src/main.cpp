@@ -3,10 +3,15 @@
 // reintroduce its features (BLE, clock, menu, prompts, stats) one at a time
 // after this boots cleanly.
 #include <M5Unified.h>
+#include <ArduinoJson.h>
 #include <esp_mac.h>
 #include <string.h>
 #include "buddy.h"
 #include "ble_bridge.h"
+
+// PersonaState ordering matches upstream: 0=sleep, 1=idle, 2=busy,
+// 3=attention, 4=celebrate, 5=dizzy, 6=heart. Phase B only drives 1/2/3.
+enum PersonaState { P_SLEEP = 0, P_IDLE = 1, P_BUSY = 2, P_ATTENTION = 3 };
 
 const int W = 135, H = 240;
 M5Canvas spr(&M5.Display);
@@ -65,6 +70,69 @@ static void drawPasskey(uint32_t pk) {
   spr.setTextColor(0x8410, 0x0000);
   spr.drawString("enter on desktop", W / 2, 184);
   spr.setTextDatum(TL_DATUM);
+}
+
+// ---------------------------------------------------------------------------
+// Heartbeat reader. The desktop sends one JSON object per line, terminated
+// by '\n'. We accumulate bytes until we see '\n', parse with ArduinoJson,
+// and pull just the busy/attention signals — the full TamaState port lands
+// in Phase C.
+// ---------------------------------------------------------------------------
+static const size_t LINE_CAP = 1024;
+static char     lineBuf[LINE_CAP];
+static size_t   lineLen = 0;
+static uint8_t  sessionsRunning = 0;
+static uint8_t  sessionsWaiting = 0;
+static uint32_t lastSnapshotMs = 0;
+
+static void applyJsonLine(const char* line) {
+  JsonDocument doc;
+  if (deserializeJson(doc, line)) {
+    Serial.printf("[ble] bad json: %.80s\n", line);
+    return;
+  }
+  // Only treat snapshots (anything with "running" or "total") as a heartbeat.
+  // Acks and {"time":...} / {"cmd":"owner"} one-shots aren't snapshots.
+  bool isSnapshot = doc["running"].is<int>() || doc["total"].is<int>();
+  if (isSnapshot) {
+    sessionsRunning = doc["running"] | 0;
+    sessionsWaiting = doc["waiting"] | 0;
+    lastSnapshotMs  = millis();
+  }
+}
+
+static void pollBle() {
+  while (bleAvailable()) {
+    int b = bleRead();
+    if (b < 0) break;
+    if (b == '\r') continue;
+    if (b == '\n') {
+      lineBuf[lineLen] = 0;
+      if (lineLen) applyJsonLine(lineBuf);
+      lineLen = 0;
+      continue;
+    }
+    if (lineLen + 1 >= LINE_CAP) {
+      // Overflow — drop the partial line; desktop will resend on next snapshot.
+      lineLen = 0;
+      Serial.println("[ble] line overflow, dropped");
+      continue;
+    }
+    lineBuf[lineLen++] = (char)b;
+  }
+}
+
+// Heartbeat is "fresh" if we got a snapshot in the last 30s (matches the
+// REFERENCE.md liveness window). Stale → treat as offline.
+static bool snapshotFresh() {
+  return lastSnapshotMs != 0 && (millis() - lastSnapshotMs) <= 30000;
+}
+
+static uint8_t personaFromState() {
+  if (!snapshotFresh())   return P_IDLE;     // offline → idle, never sad
+  if (sessionsWaiting > 0) return P_ATTENTION;
+  if (sessionsRunning > 0) return P_BUSY;
+  return P_IDLE;
 }
 
 static void drawSpeciesText() {
@@ -129,14 +197,28 @@ void loop() {
     wasShowingPasskey = false;
   }
 
+  pollBle();
+
   if (M5.BtnA.wasPressed()) {
     buddyNextSpecies();     // wraps around at the end of the species table
     drawSpeciesText();
   }
 
+  // Persona logged on change so we can see state transitions on serial
+  // without spamming a line every tick.
+  static uint8_t lastPersona = 0xFF;
+  uint8_t persona = personaFromState();
+  if (persona != lastPersona) {
+    Serial.printf("[state] %s (running=%u waiting=%u fresh=%d)\n",
+                  persona == P_BUSY ? "busy" :
+                  persona == P_ATTENTION ? "attention" : "idle",
+                  sessionsRunning, sessionsWaiting, snapshotFresh());
+    lastPersona = persona;
+  }
+
   // buddyTick is internally throttled to 5fps and clears its own region; do
   // NOT fillSprite() here or the screen flickers black between buddy frames.
-  buddyTick(1);  // 1 = P_IDLE in upstream PersonaState ordering
+  buddyTick(persona);
   spr.pushSprite(0, 0);
   delay(33);
 }
