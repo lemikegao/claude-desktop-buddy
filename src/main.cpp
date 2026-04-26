@@ -3,8 +3,10 @@
 // reintroduce its features (BLE, clock, menu, prompts, stats) one at a time
 // after this boots cleanly.
 #include <M5Unified.h>
+#include <esp_mac.h>
 #include <string.h>
 #include "buddy.h"
+#include "ble_bridge.h"
 
 const int W = 135, H = 240;
 M5Canvas spr(&M5.Display);
@@ -36,6 +38,35 @@ static const char* speciesSound(const char* name) {
   return "...";
 }
 
+// Advertise as "Claude-XXXX" (last two BT MAC bytes) so multiple sticks in
+// one room are distinguishable in the desktop picker. Matches upstream.
+static char btName[16] = "Claude";
+static void startBt() {
+  uint8_t mac[6] = {0};
+  esp_read_mac(mac, ESP_MAC_BT);
+  snprintf(btName, sizeof(btName), "Claude-%02X%02X", mac[4], mac[5]);
+  bleInit(btName);
+}
+
+// Full-screen takeover while the 6-digit passkey is on screen. Mirrors
+// upstream drawPasskey() but uses fixed colors since the Palette/character
+// system isn't wired in this stub.
+static void drawPasskey(uint32_t pk) {
+  spr.fillSprite(0x0000);
+  spr.setTextDatum(MC_DATUM);
+  spr.setTextSize(1);
+  spr.setTextColor(0x8410, 0x0000);
+  spr.drawString("BLUETOOTH PAIRING", W / 2, 56);
+  spr.setTextSize(3);
+  spr.setTextColor(0xFFFF, 0x0000);
+  char b[8]; snprintf(b, sizeof(b), "%06lu", (unsigned long)pk);
+  spr.drawString(b, W / 2, 120);
+  spr.setTextSize(1);
+  spr.setTextColor(0x8410, 0x0000);
+  spr.drawString("enter on desktop", W / 2, 184);
+  spr.setTextDatum(TL_DATUM);
+}
+
 static void drawSpeciesText() {
   spr.fillRect(0, TEXT_TOP, W, H - TEXT_TOP, 0x0000);
   spr.setTextDatum(MC_DATUM);
@@ -48,12 +79,17 @@ static void drawSpeciesText() {
 void setup() {
   auto cfg = M5.config();
   M5.begin(cfg);
+  // M5Unified does NOT auto-init Serial (legacy M5StickCPlus did). Without
+  // this, every Serial.print in ble_bridge silently no-ops.
+  Serial.begin(115200);
   M5.Display.setRotation(0);
   M5.Display.setBrightness(180);
 
   spr.createSprite(W, H);
   buddyInit();
   buddySetSpeciesIdx(0);
+
+  startBt();
 
   spr.fillSprite(0x0000);
   spr.setTextDatum(MC_DATUM);
@@ -72,6 +108,26 @@ void setup() {
 
 void loop() {
   M5.update();
+
+  static bool wasShowingPasskey = false;
+  uint32_t pk = blePasskey();
+  if (pk) {
+    // While pairing: passkey takes the whole screen. BtnA cycling is
+    // suppressed so the user isn't fighting the UI mid-pair.
+    drawPasskey(pk);
+    spr.pushSprite(0, 0);
+    wasShowingPasskey = true;
+    delay(33);
+    return;
+  }
+  if (wasShowingPasskey) {
+    // First tick after passkey clears: wipe and force buddy to repaint
+    // everything (buddyTick only clears its own region).
+    spr.fillSprite(0x0000);
+    drawSpeciesText();
+    buddyInvalidate();
+    wasShowingPasskey = false;
+  }
 
   if (M5.BtnA.wasPressed()) {
     buddyNextSpecies();     // wraps around at the end of the species table
