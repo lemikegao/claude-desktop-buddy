@@ -10,6 +10,7 @@ void buddyInit();
 void buddyTick(uint8_t personaState);
 void buddyInvalidate();
 void buddyRenderTo(LovyanGFX* tgt, uint8_t personaState);
+void buddySetRenderTarget(LovyanGFX* tgt);
 void buddySetSpecies(const char* name);
 void buddySetSpeciesIdx(uint8_t idx);
 void buddyNextSpecies();

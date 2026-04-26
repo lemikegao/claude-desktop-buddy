@@ -146,6 +146,15 @@ static uint8_t lastDrawnState = 0xFF;
 static uint8_t lastDrawnSpecies = 0xFF;
 void buddyInvalidate() { lastDrawnState = 0xFF; }
 
+// Redirect all buddy drawing to a different LovyanGFX target. Used by the
+// main loop to render the buddy into an offscreen sprite that then gets
+// pushed onto the main canvas via pushRotateZoom for fractional scaling.
+// Pass nullptr / the original spr to revert.
+void buddySetRenderTarget(LovyanGFX* tgt) {
+  _tgt = tgt ? tgt : (LovyanGFX*)&spr;
+  buddyInvalidate();
+}
+
 void buddySetPeek(bool peek) {
   uint8_t s = peek ? 1 : 2;
   if (s == _scale) return;
@@ -188,8 +197,14 @@ void buddyTick(uint8_t personaState) {
   lastDrawnSpecies = currentSpeciesIdx;
 
   // Clear the whole render strip — at 2× the body reaches y≈126, at 1× ≈82.
-  spr.fillRect(0, 0, BUDDY_CANVAS_W,
-               (BUDDY_Y_BASE + 5 * BUDDY_CHAR_H + 12) * _scale, BUDDY_BG);
+  // Use _tgt (not spr directly) so the clear targets whatever buffer the
+  // caller redirected us to via buddySetRenderTarget — needed for the
+  // pushRotateZoom path in main.cpp that scales the buddy non-integer.
+  // Width follows the actual target so wider offscreen sprites (used to
+  // give doBusy's dot ticker room past x=135 at scale=2) get cleared in
+  // full instead of leaving ink in the right margin.
+  _tgt->fillRect(0, 0, _tgt->width(),
+                 (BUDDY_Y_BASE + 5 * BUDDY_CHAR_H + 12) * _scale, BUDDY_BG);
 
   const Species* sp = SPECIES_TABLE[currentSpeciesIdx];
   if (sp->states[personaState]) sp->states[personaState](tickCount);
