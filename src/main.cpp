@@ -39,7 +39,7 @@ const float BUDDY_ZOOM = 0.7f;
 const int TEXT_TOP = 170;
 
 // How long the species sound text replaces the stats block after BtnA.
-const uint32_t SPECIES_FLASH_MS = 3000;
+const uint32_t SPECIES_FLASH_MS = 1000;
 static uint32_t speciesFlashUntilMs = 0;
 
 // Idle screen-off. After this many ms with no button press AND Claude not
@@ -76,8 +76,24 @@ static const char* speciesSound(const char* name) {
 // capitalized animal name. Add entries here as more get named.
 static const char* buddyDisplayName() {
   const char* species = buddySpeciesName();
-  if (!strcmp(species, "cat"))  return "Bauble";
-  if (!strcmp(species, "blob")) return "Gloozy";
+  if (!strcmp(species, "cat"))      return "Bauble";
+  if (!strcmp(species, "blob"))     return "Gloozy";
+  if (!strcmp(species, "capybara")) return "Ryan";
+  if (!strcmp(species, "duck"))     return "Quacky";
+  if (!strcmp(species, "goose"))    return "Goosey";
+  if (!strcmp(species, "dragon"))   return "Squeaks";
+  if (!strcmp(species, "octopus"))  return "Octopie";
+  if (!strcmp(species, "owl"))      return "Hoot Hoot";
+  if (!strcmp(species, "penguin"))  return "Penny";
+  if (!strcmp(species, "turtle"))   return "Turty";
+  if (!strcmp(species, "snail"))    return "Slobby";
+  if (!strcmp(species, "ghost"))    return "Boo";
+  if (!strcmp(species, "axolotl"))  return "Axo";
+  if (!strcmp(species, "cactus"))   return "Spike";
+  if (!strcmp(species, "robot"))    return "Beep Bopp";
+  if (!strcmp(species, "rabbit"))   return "Boingy";
+  if (!strcmp(species, "mushroom")) return "Mossy";
+  if (!strcmp(species, "chonk"))    return "Chonky";
   // Fallback: capitalize first letter of the species id.
   static char buf[16];
   snprintf(buf, sizeof(buf), "%s", species);
