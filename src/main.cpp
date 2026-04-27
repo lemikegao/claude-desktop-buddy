@@ -261,6 +261,11 @@ static uint8_t personaFromState() {
   if (!snapshotFresh())   return P_IDLE;     // offline → idle, never sad
   if (sessionsWaiting > 0) return P_ATTENTION;
   if (sessionsRunning > 0) return P_BUSY;
+  // No live session — pick mood from today's activity. 0 tokens reads as
+  // "no work yet today" → buddy is sleepy. Anything > 0 is a normal idle.
+  // Pre-heartbeat (`!Seen`) we don't know yet, so fall through to P_IDLE
+  // rather than appear sleepy on a blank slate.
+  if (daystatsTokensTodaySeen() && daystatsTokensToday() == 0) return P_SLEEP;
   return P_IDLE;
 }
 
@@ -293,9 +298,6 @@ static void pollShake() {
 // Default render of the y>=170 region: buddy display name big, then a rule,
 // then tokens today + lifetime tokens. Anti-streak / anti-FOMO per the plan:
 // no goal markers, no comparisons, no day-of-week.
-//
-// Note: delegation seconds are still tracked (Phase D will use them to scale
-// idle-animation amplitude) — they just don't get a numeric display anymore.
 static void drawStats() {
   spr.fillRect(0, TEXT_TOP, W, H - TEXT_TOP, 0x0000);
 
@@ -433,7 +435,6 @@ void loop() {
 
   pollBle();
   pollShake();
-  daystatsTick(sessionsRunning, snapshotFresh());
 
   // Snapshot before wake() so we can tell whether *this* press was a
   // wake-from-off — we want to swallow species-cycling on that press so
@@ -462,11 +463,13 @@ void loop() {
     Serial.printf("[state] %s (running=%u waiting=%u fresh=%d)\n",
                   persona == P_BUSY ? "busy" :
                   persona == P_ATTENTION ? "attention" :
-                  persona == P_DIZZY ? "dizzy" : "idle",
+                  persona == P_DIZZY ? "dizzy" :
+                  persona == P_SLEEP ? "sleep" : "idle",
                   sessionsRunning, sessionsWaiting, snapshotFresh());
     // Non-idle transitions are interesting → wake the screen so the user
-    // sees the buddy come to life. Going-to-idle does NOT wake.
-    if (persona != P_IDLE) wake();
+    // sees the buddy come to life. Sleep/idle don't auto-wake (sleep is
+    // the morning resting state, not an alert).
+    if (persona != P_IDLE && persona != P_SLEEP) wake();
     lastPersona = persona;
   }
 
