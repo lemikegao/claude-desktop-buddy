@@ -66,6 +66,20 @@ const uint8_t  SCREEN_BRIGHTNESS = 180;
 static uint32_t lastInteractMs = 0;
 static bool     screenOff = false;
 
+// End-of-day wind-down (Phase E). Wall-clock based; relies on the RTC
+// having been sync'd from the desktop's `time` message. Pre-sync (year
+// < 2025) the wind-down is silently disabled so a fresh device with a
+// dead coin cell doesn't wake up forever-dim.
+//
+// 9pm: backlight drops, otherwise-idle persona forced to sleep. (Active
+// busy/attention/dizzy still take priority — late-night work shouldn't
+// make the buddy fake-sleep.)
+// 10pm: backlight drops further. Same persona override.
+const int      WINDDOWN_HOUR_YAWN    = 21;   // 9pm
+const int      WINDDOWN_HOUR_SLEEP   = 22;   // 10pm
+const uint8_t  WINDDOWN_BRIGHT_YAWN  = 60;
+const uint8_t  WINDDOWN_BRIGHT_SLEEP = 30;
+
 static const char* speciesSound(const char* name) {
   if (!strcmp(name, "capybara")) return "squee!";
   if (!strcmp(name, "duck"))     return "quack!";
@@ -118,14 +132,39 @@ static const char* buddyDisplayName() {
 }
 
 // ---------------------------------------------------------------------------
-// Idle screen-off. Backlight goes to 0 after SCREEN_OFF_MS of no interaction
-// (no button + Claude not running/attention). BLE stays alive so the desktop
-// keeps streaming snapshots; we just don't burn the LCD.
+// Idle screen-off + wind-down. Backlight goes to 0 after SCREEN_OFF_MS of no
+// interaction (no button + Claude not running/attention). BLE stays alive so
+// the desktop keeps streaming snapshots; we just don't burn the LCD.
+//
+// On top of that, the active "on" brightness is dimmed in the evening (see
+// WINDDOWN_* above) so the device backs off as you wind down for sleep.
 // ---------------------------------------------------------------------------
+
+// Returns the local hour 0..23, or -1 if the RTC hasn't been sync'd yet.
+// Same year-based pre-sync filter as the (since-removed) daystats rollover:
+// a stock BM8563 may report 2000-01-01 until the desktop's `time` message
+// arrives.
+static int hourOfDay() {
+  m5::rtc_datetime_t dt;
+  if (!M5.Rtc.getDateTime(&dt)) return -1;
+  if (dt.date.year < 2025) return -1;
+  return dt.time.hours;
+}
+
+// Active "screen on" brightness, accounting for wind-down hours. Pre-sync
+// returns the daytime default (no point dimming if we don't know the time).
+static uint8_t windDownBrightness() {
+  int h = hourOfDay();
+  if (h < 0) return SCREEN_BRIGHTNESS;
+  if (h >= WINDDOWN_HOUR_SLEEP) return WINDDOWN_BRIGHT_SLEEP;
+  if (h >= WINDDOWN_HOUR_YAWN)  return WINDDOWN_BRIGHT_YAWN;
+  return SCREEN_BRIGHTNESS;
+}
+
 static void wake() {
   lastInteractMs = millis();
   if (screenOff) {
-    M5.Display.setBrightness(SCREEN_BRIGHTNESS);
+    M5.Display.setBrightness(windDownBrightness());
     screenOff = false;
     // Force a full repaint so the user sees the latest frame, not the
     // stale frame that was on screen when we dimmed.
@@ -141,6 +180,20 @@ static void maybeSleep() {
     M5.Display.setBrightness(0);
     screenOff = true;
     Serial.println("[power] screen off (idle)");
+  }
+}
+
+// Re-apply the wind-down brightness when the wall-clock crosses an hour
+// boundary while the screen is on. Without this you'd have to button-press
+// (= wake()) for the dim to take effect after 9pm/10pm.
+static void applyWindDown() {
+  if (screenOff) return;
+  static uint8_t lastApplied = 0xFF;
+  uint8_t b = windDownBrightness();
+  if (b != lastApplied) {
+    M5.Display.setBrightness(b);
+    Serial.printf("[power] wind-down brightness=%u\n", (unsigned)b);
+    lastApplied = b;
   }
 }
 
@@ -261,6 +314,11 @@ static uint8_t personaFromState() {
   if (!snapshotFresh())   return P_IDLE;     // offline → idle, never sad
   if (sessionsWaiting > 0) return P_ATTENTION;
   if (sessionsRunning > 0) return P_BUSY;
+  // Wind-down hours: buddy is sleepy regardless of today's tokens. (Live
+  // sessions above already returned, so this only applies when otherwise
+  // idle — late-night work still shows busy/attention.)
+  int h = hourOfDay();
+  if (h >= WINDDOWN_HOUR_YAWN) return P_SLEEP;
   // No live session — pick mood from today's activity. 0 tokens reads as
   // "no work yet today" → buddy is sleepy. Anything > 0 is a normal idle.
   // Pre-heartbeat (`!Seen`) we don't know yet, so fall through to P_IDLE
@@ -472,6 +530,10 @@ void loop() {
     if (persona != P_IDLE && persona != P_SLEEP) wake();
     lastPersona = persona;
   }
+
+  // Re-apply wind-down brightness if the clock crossed 9pm/10pm. Cheap
+  // (a single setBrightness call only when the level actually changes).
+  applyWindDown();
 
   // Idle long enough → backlight off. Ticked after the persona check so
   // an attention/busy transition wins over the timeout in the same loop.
