@@ -174,8 +174,18 @@ static void wake() {
   }
 }
 
-static void maybeSleep() {
+static void maybeSleep(uint8_t persona) {
   if (screenOff) return;
+  // ATTENTION (Claude is waiting on the user) holds the screen on
+  // indefinitely — that's the whole point of the state, "come look at
+  // me, I need a click." BUSY and DIZZY get a one-shot wake() on the
+  // transition into them and then time out normally; a 30-minute
+  // running session shouldn't keep the LCD lit the whole time, both
+  // for power/heat and because there's nothing actionable to look at.
+  if (persona == P_ATTENTION) {
+    lastInteractMs = millis();
+    return;
+  }
   if (millis() - lastInteractMs >= SCREEN_OFF_MS) {
     M5.Display.setBrightness(0);
     screenOff = true;
@@ -537,7 +547,9 @@ void loop() {
 
   // Idle long enough → backlight off. Ticked after the persona check so
   // an attention/busy transition wins over the timeout in the same loop.
-  maybeSleep();
+  // Pass the live persona so ATTENTION holds the screen on (see comment
+  // in maybeSleep() for why busy/dizzy don't).
+  maybeSleep(persona);
 
   // buddyTick is internally throttled to 5fps and clears its own region.
   // It now writes into buddySpr (not spr) thanks to buddySetRenderTarget.
