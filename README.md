@@ -1,5 +1,13 @@
 # claude-desktop-buddy
 
+> ⚠️ **Personal fork — not affiliated with Anthropic.** This is a hobby
+> fork of [anthropics/claude-desktop-buddy](https://github.com/anthropics/claude-desktop-buddy)
+> targeting the **M5StickC PLUS2** (not the original PLUS) on the
+> M5Unified library. It's iterated for my own desk and isn't maintained
+> for general use — expect rough edges, parked upstream features, and no
+> support. If you want the supported reference, head to the upstream repo
+> linked above.
+
 Claude for macOS and Windows can connect Claude Cowork and Claude Code to
 maker devices over BLE, so developers and makers can build hardware that
 displays permission prompts, recent messages, and other interactions. We've
