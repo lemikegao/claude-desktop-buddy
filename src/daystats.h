@@ -98,16 +98,21 @@ inline void daystatsCheckRollover() {
   }
 }
 
-// Called from the heartbeat handler on every snapshot. `active` is true when
-// at least one session is running or blocking on a permission prompt — that's
-// the same condition that drives BUSY/ATTENTION on screen. Between snapshots
-// we add the elapsed wall-clock seconds to today/total iff the *previous*
-// snapshot was active — that's what "agent was running for the past N
-// seconds" means.
+// Called from the heartbeat handler on every snapshot. `active` is true
+// only when a session is actually generating — `waiting > 0` alone doesn't
+// count, because that's the agent stopped, blocked on a permission prompt
+// I haven't answered. Counting "waiting" would inflate the metric in
+// exactly the direction we want it to discourage (idle-while-prompted).
+// Between snapshots we add the elapsed wall-clock seconds to today/total
+// iff the *previous* snapshot was active — that's what "agent was running
+// for the past N seconds" means. `waiting` is still a parameter so callers
+// don't need to know the predicate; the buddy's ATTENTION persona keeps
+// using `waiting` independently to flag prompts on the LCD.
 inline void daystatsOnSnapshot(uint8_t running, uint8_t waiting) {
+  (void)waiting;
   daystatsCheckRollover();
   uint32_t now = millis();
-  bool active = (running > 0) || (waiting > 0);
+  bool active = (running > 0);
   if (_dsSeen && _dsLastActive) {
     uint32_t deltaMs = now - _dsLastSnapshotMs;
     // Cap at 60s: heartbeats arrive every ~10s, and the freshness window

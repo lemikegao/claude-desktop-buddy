@@ -393,7 +393,17 @@ static void drawStats() {
   } else {
     snprintf(line, sizeof(line), "-- today");
   }
-  spr.setTextColor(0x07FF, 0x0000);              // cyan
+  // Three-tier color encodes "is the clock moving right now":
+  //   bright cyan — fresh + running   → ticking
+  //   white       — fresh + idle      → paused, agent capacity unused
+  //   dim gray    — stale (>30s)      → bridge offline, data frozen
+  // The dim-gray case deliberately matches the total line below, so on
+  // disconnect today/total visually merge into a single "frozen" block.
+  uint16_t todayColor;
+  if (!snapshotFresh())          todayColor = 0x8410;  // gray (matches total)
+  else if (sessionsRunning > 0)  todayColor = 0x07FF;  // bright cyan
+  else                           todayColor = 0xFFFF;  // white
+  spr.setTextColor(todayColor, 0x0000);
   spr.drawString(line, W / 2, 212);
 
   // Total is device-persisted, so show it even pre-heartbeat (only "today"
