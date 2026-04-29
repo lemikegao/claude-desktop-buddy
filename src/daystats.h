@@ -99,20 +99,27 @@ inline void daystatsCheckRollover() {
 }
 
 // Called from the heartbeat handler on every snapshot. `active` is true
-// only when a session is actually generating — `waiting > 0` alone doesn't
-// count, because that's the agent stopped, blocked on a permission prompt
-// I haven't answered. Counting "waiting" would inflate the metric in
-// exactly the direction we want it to discourage (idle-while-prompted).
+// only when at least one session is actually generating tokens.
+//
+// Wire-protocol gotcha: REFERENCE.md says `running` = "sessions actively
+// generating", but in practice Claude desktop counts a session blocked on
+// a permission prompt as BOTH running and waiting (running = "alive
+// sessions"; waiting overlaps it). So `running > 0` over-counts: with two
+// sessions both stuck on prompts, the desktop reports running=2, waiting=2
+// and naive code would tick the clock even though nothing is generating.
+//
+// The actual "is at least one session generating" test is `running > waiting`:
+// total alive minus those blocked on prompts. Confirmed empirically with
+// the [snap] debug log on 2025-04-29 — desktop reported running=2 waiting=2
+// when reality was 0 generating, 2 prompted.
+//
 // Between snapshots we add the elapsed wall-clock seconds to today/total
-// iff the *previous* snapshot was active — that's what "agent was running
-// for the past N seconds" means. `waiting` is still a parameter so callers
-// don't need to know the predicate; the buddy's ATTENTION persona keeps
-// using `waiting` independently to flag prompts on the LCD.
+// iff the *previous* snapshot was active. The buddy's ATTENTION persona
+// keeps using `waiting` independently to flag prompts on the LCD.
 inline void daystatsOnSnapshot(uint8_t running, uint8_t waiting) {
-  (void)waiting;
   daystatsCheckRollover();
   uint32_t now = millis();
-  bool active = (running > 0);
+  bool active = (running > waiting);
   if (_dsSeen && _dsLastActive) {
     uint32_t deltaMs = now - _dsLastSnapshotMs;
     // Cap at 60s: heartbeats arrive every ~10s, and the freshness window

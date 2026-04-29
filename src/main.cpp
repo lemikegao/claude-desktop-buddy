@@ -394,15 +394,17 @@ static void drawStats() {
     snprintf(line, sizeof(line), "-- today");
   }
   // Three-tier color encodes "is the clock moving right now":
-  //   bright cyan — fresh + running   → ticking
-  //   white       — fresh + idle      → paused, agent capacity unused
-  //   dim gray    — stale (>30s)      → bridge offline, data frozen
+  //   bright cyan — fresh + generating → ticking
+  //   white       — fresh + idle       → paused, agent capacity unused
+  //   dim gray    — stale (>30s)       → bridge offline, data frozen
   // The dim-gray case deliberately matches the total line below, so on
   // disconnect today/total visually merge into a single "frozen" block.
+  // "generating" = `running > waiting` (see daystats.h for why — the
+  // desktop counts blocked-on-prompt sessions as running too).
   uint16_t todayColor;
-  if (!snapshotFresh())          todayColor = 0x8410;  // gray (matches total)
-  else if (sessionsRunning > 0)  todayColor = 0x07FF;  // bright cyan
-  else                           todayColor = 0xFFFF;  // white
+  if (!snapshotFresh())                              todayColor = 0x8410;
+  else if (sessionsRunning > sessionsWaiting)        todayColor = 0x07FF;
+  else                                               todayColor = 0xFFFF;
   spr.setTextColor(todayColor, 0x0000);
   spr.drawString(line, W / 2, 212);
 

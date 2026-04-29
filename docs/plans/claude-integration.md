@@ -33,10 +33,12 @@ plus a lifetime total so I can see "how much agent time I've ever had."
 - **Buddy mood = today's agent active time.** 0s: sleeping ("haven't started
   yet today"). >0s: idle. Never sad — only "hasn't worked yet today." A
   later iteration may add a 1h+ "energetic" tier; v1 keeps it binary.
-- **What counts as "active":** `running > 0` only — at least one session
-  is actually generating. `waiting > 0` alone (a session stopped on a
-  permission prompt) doesn't count: that's the agent idle, waiting on me.
-  Open-but-idle sessions don't count either. Active time accumulates
+- **What counts as "active":** `running > waiting` — at least one alive
+  session that isn't blocked on a permission prompt. The desktop counts
+  blocked sessions as both `running` AND `waiting`, so the actual
+  "currently generating" count is `running - waiting`. A session stopped
+  on a prompt doesn't tick the clock: that's the agent idle, waiting on
+  me. Open-but-idle sessions don't count either. Active time accumulates
   between snapshots (~10s cadence) and is capped per-snapshot at 60s so
   a BLE drop doesn't credit a phantom hour.
 - **BtnA cycles species** (current behavior, keep). Species sound flashes for
