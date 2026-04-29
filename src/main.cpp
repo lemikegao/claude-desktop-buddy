@@ -12,8 +12,10 @@
 #include "daystats.h"
 
 // PersonaState ordering matches upstream: 0=sleep, 1=idle, 2=busy,
-// 3=attention, 4=celebrate, 5=dizzy, 6=heart. Phase B only drives 1/2/3;
-// dizzy is triggered by shake-to-dizzy below.
+// 3=attention, 4=celebrate, 5=dizzy, 6=heart. Driven slots: 1/2/3
+// (heartbeat-based mood), 5 (shake-to-dizzy), 6 (energetic — today's
+// agent active time crossed the threshold). 0 (sleep) is wind-down or
+// pre-work-today. 4 (celebrate) is unused.
 enum PersonaState { P_SLEEP = 0, P_IDLE = 1, P_BUSY = 2, P_ATTENTION = 3,
                     P_CELEBRATE = 4, P_DIZZY = 5, P_HEART = 6 };
 
@@ -79,6 +81,14 @@ const int      WINDDOWN_HOUR_YAWN    = 21;   // 9pm
 const int      WINDDOWN_HOUR_SLEEP   = 22;   // 10pm
 const uint8_t  WINDDOWN_BRIGHT_YAWN  = 60;
 const uint8_t  WINDDOWN_BRIGHT_SLEEP = 30;
+
+// Energetic mood: when no session is currently doing anything but the agent
+// has racked up enough active time today, the buddy switches from plain
+// idle to the heart persona ("floating hearts" — buddy looks pleased with
+// the day). Picked 2h as a real-workday signal: hits on productive days,
+// misses on slow ones. Tune to taste; goal is for it to fire on roughly
+// 40-60% of working days. Less = wallpaper; more = becomes mythical.
+const uint32_t ENERGETIC_THRESHOLD_S = 2UL * 3600;
 
 static const char* speciesSound(const char* name) {
   if (!strcmp(name, "capybara")) return "squee!";
@@ -328,11 +338,15 @@ static uint8_t personaFromState() {
   // idle — late-night work still shows busy/attention.)
   int h = hourOfDay();
   if (h >= WINDDOWN_HOUR_YAWN) return P_SLEEP;
-  // No live session — pick mood from today's activity. 0 agent-seconds
-  // reads as "no work yet today" → buddy is sleepy. Anything > 0 is a
-  // normal idle. Pre-heartbeat (`!Seen`) we don't know yet, so fall
-  // through to P_IDLE rather than appear sleepy on a blank slate.
+  // No live session — pick mood from today's activity:
+  //   0 agent-seconds         → P_SLEEP  ("no work yet today")
+  //   ≥ ENERGETIC_THRESHOLD_S → P_HEART  ("buddy is pleased, day went well")
+  //   otherwise               → P_IDLE   ("nice and ordinary")
+  // Pre-heartbeat (`!Seen`) we don't know yet, so fall through to P_IDLE
+  // rather than appear sleepy on a blank slate. Energetic doesn't need
+  // the seen-gate because today_s == 0 < threshold pre-heartbeat anyway.
   if (daystatsSeen() && daystatsAgentTodayS() == 0) return P_SLEEP;
+  if (daystatsAgentTodayS() >= ENERGETIC_THRESHOLD_S) return P_HEART;
   return P_IDLE;
 }
 
@@ -544,12 +558,14 @@ void loop() {
                   persona == P_BUSY ? "busy" :
                   persona == P_ATTENTION ? "attention" :
                   persona == P_DIZZY ? "dizzy" :
+                  persona == P_HEART ? "heart" :
                   persona == P_SLEEP ? "sleep" : "idle",
                   sessionsRunning, sessionsWaiting, snapshotFresh());
     // Non-idle transitions are interesting → wake the screen so the user
-    // sees the buddy come to life. Sleep/idle don't auto-wake (sleep is
-    // the morning resting state, not an alert).
-    if (persona != P_IDLE && persona != P_SLEEP) wake();
+    // sees the buddy come to life. Sleep/idle/heart don't auto-wake:
+    // sleep is the morning resting state, idle is normal, and heart is
+    // an ambient "good day" reward — not an alert.
+    if (persona != P_IDLE && persona != P_SLEEP && persona != P_HEART) wake();
     lastPersona = persona;
   }
 

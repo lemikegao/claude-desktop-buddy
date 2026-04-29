@@ -30,9 +30,14 @@ plus a lifetime total so I can see "how much agent time I've ever had."
 
 ## Behaviors
 
-- **Buddy mood = today's agent active time.** 0s: sleeping ("haven't started
-  yet today"). >0s: idle. Never sad — only "hasn't worked yet today." A
-  later iteration may add a 1h+ "energetic" tier; v1 keeps it binary.
+- **Buddy mood = today's agent active time.** Three tiers when no session
+  is currently doing anything:
+    - 0s → SLEEP ("haven't started yet today")
+    - 0 < today < ENERGETIC_THRESHOLD_S → IDLE (ordinary)
+    - today ≥ ENERGETIC_THRESHOLD_S → HEART ("good day, buddy is pleased")
+  Threshold starts at 2h. Tune in `main.cpp` if it fires too often or
+  never. Never sad — only "hasn't worked yet today." Wind-down hours
+  override HEART back to SLEEP (bedtime > reward).
 - **What counts as "active":** `running > waiting` — at least one alive
   session that isn't blocked on a permission prompt. The desktop counts
   blocked sessions as both `running` AND `waiting`, so the actual
@@ -83,6 +88,7 @@ plus a lifetime total so I can see "how much agent time I've ever had."
 | D | Buddy mood reflects daystats | Buddy sleeps if no agent time today |
 | E | End-of-day wind-down | RTC says 9pm → buddy yawns |
 | F | Drive metric off agent active time | Replaces tokens-based phase D |
+| G | Energetic mood tier (HEART persona at ≥2h today) | Cross threshold → buddy gets floating hearts |
 
 Each phase is small enough to test in isolation. Adjust between phases.
 
