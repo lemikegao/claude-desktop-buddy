@@ -281,12 +281,11 @@ static void applyJsonLine(const char* line) {
     sessionsWaiting = doc["waiting"] | 0;
     lastSnapshotMs  = millis();
 
-    if (doc["tokens"].is<uint32_t>()) {
-      daystatsOnBridgeTokens(doc["tokens"].as<uint32_t>());
-    }
-    if (doc["tokens_today"].is<uint32_t>()) {
-      daystatsOnTokensToday(doc["tokens_today"].as<uint32_t>());
-    }
+    // Agent active time is the user-facing metric. Tick on every snapshot
+    // (~10s cadence) — daystats credits today/total based on whether the
+    // *previous* snapshot was active. `tokens`/`tokens_today` are still in
+    // the wire payload but ignored on this fork.
+    daystatsOnSnapshot(sessionsRunning, sessionsWaiting);
   }
 }
 
@@ -329,11 +328,11 @@ static uint8_t personaFromState() {
   // idle — late-night work still shows busy/attention.)
   int h = hourOfDay();
   if (h >= WINDDOWN_HOUR_YAWN) return P_SLEEP;
-  // No live session — pick mood from today's activity. 0 tokens reads as
-  // "no work yet today" → buddy is sleepy. Anything > 0 is a normal idle.
-  // Pre-heartbeat (`!Seen`) we don't know yet, so fall through to P_IDLE
-  // rather than appear sleepy on a blank slate.
-  if (daystatsTokensTodaySeen() && daystatsTokensToday() == 0) return P_SLEEP;
+  // No live session — pick mood from today's activity. 0 agent-seconds
+  // reads as "no work yet today" → buddy is sleepy. Anything > 0 is a
+  // normal idle. Pre-heartbeat (`!Seen`) we don't know yet, so fall
+  // through to P_IDLE rather than appear sleepy on a blank slate.
+  if (daystatsSeen() && daystatsAgentTodayS() == 0) return P_SLEEP;
   return P_IDLE;
 }
 
@@ -364,14 +363,16 @@ static void pollShake() {
 }
 
 // Default render of the y>=170 region: buddy display name big, then a rule,
-// then tokens today + lifetime tokens. Anti-streak / anti-FOMO per the plan:
-// no goal markers, no comparisons, no day-of-week.
+// then agent active time today + total. Anti-streak / anti-FOMO per the
+// plan: no goal markers, no comparisons, no day-of-week. The metric is
+// "how much of my day did the agent actually work" — utilization, not
+// productivity.
 static void drawStats() {
   spr.fillRect(0, TEXT_TOP, W, H - TEXT_TOP, 0x0000);
 
   char buf[24];
 
-  // Buddy name, large and centered. Replaces the elapsed-time display.
+  // Buddy name, large and centered.
   spr.setTextDatum(MC_DATUM);
   spr.setTextSize(2);
   spr.setTextColor(0xFFFF, 0x0000);
@@ -380,14 +381,14 @@ static void drawStats() {
   // Thin rule under the name.
   spr.drawFastHLine(20, 200, W - 40, 0x4208);
 
-  // Tokens today + lifetime. Until the first heartbeat lands, show a
-  // placeholder rather than "0 today" — at boot/reconnect the desktop's
-  // keepalive can take ~10s, and "0" reads as "I worked nothing today"
+  // Agent active time today. Until the first heartbeat lands, show a
+  // placeholder rather than "0m today" — at boot/reconnect the desktop's
+  // keepalive can take ~10s, and "0m" reads as "I worked nothing today"
   // when the truth is "I haven't heard from the desktop yet."
   spr.setTextSize(1);
   char line[32];
-  if (daystatsTokensTodaySeen()) {
-    daystatsFmtTokens(buf, sizeof(buf), daystatsTokensToday());
+  if (daystatsSeen()) {
+    daystatsFmtDuration(buf, sizeof(buf), daystatsAgentTodayS());
     snprintf(line, sizeof(line), "%s today", buf);
   } else {
     snprintf(line, sizeof(line), "-- today");
@@ -395,11 +396,10 @@ static void drawStats() {
   spr.setTextColor(0x07FF, 0x0000);              // cyan
   spr.drawString(line, W / 2, 212);
 
-  // Lifetime is the device's own persisted counter — even pre-heartbeat
-  // we know it from NVS, so show the real value (only "today" gates on
-  // having actually heard from the desktop this session).
-  daystatsFmtTokens(buf, sizeof(buf), daystatsLifetimeTokens());
-  snprintf(line, sizeof(line), "%s lifetime", buf);
+  // Total is device-persisted, so show it even pre-heartbeat (only "today"
+  // gates on having heard from the desktop this session).
+  daystatsFmtDuration(buf, sizeof(buf), daystatsAgentTotalS());
+  snprintf(line, sizeof(line), "%s total", buf);
   spr.setTextColor(0x8410, 0x0000);
   spr.drawString(line, W / 2, 226);
 
@@ -517,10 +517,10 @@ void loop() {
     drawTextRegion();
   }
 
-  // The stats block changes infrequently (delegation seconds tick once per
-  // second; tokens only on snapshots) but the species flash auto-expires.
-  // Re-render every loop is cheap (sprite is offscreen) and keeps the
-  // expiration handling simple.
+  // The stats block changes infrequently (agent seconds tick once per
+  // snapshot, ~10s) but the species flash auto-expires. Re-render every
+  // loop is cheap (sprite is offscreen) and keeps the expiration handling
+  // simple.
   drawTextRegion();
 
   // Persona logged on change so we can see state transitions on serial

@@ -1,37 +1,43 @@
-# Claude Integration — ambient productivity buddy
+# Claude Integration — ambient agent-time buddy
 
-Hobby-project plan. Current state on `plus2` branch: capybara renders,
-BtnA cycles species, no Claude integration yet.
+Hobby-project plan. Tracks how much agent time I'm actually utilizing,
+rendered as an ambient companion on the desk. Anti-streak, anti-FOMO —
+the goal is "agents running as long as possible during the day," not
+"hit a number."
 
 ## Goal
 
-Ambient productivity coach on the desk. Reflects how much I've delegated
-to Claude today without nagging or gamifying it. Explicitly anti-streak,
-anti-FOMO.
+Make agent utilization legible. The buddy reflects how much of today my
+Claude sessions have actually been working (running or waiting on me),
+plus a lifetime total so I can see "how much agent time I've ever had."
 
 ## Final screen layout
 
 ```
 ┌─────────────────┐
 │                 │
-│    [ buddy ]    │  ← reflects today's delegation
+│    [ buddy ]    │  ← reflects today's agent active time
 │                 │       (BtnA still cycles species)
 │                 │
-│   1h 23m        │
-│   today         │
 │                 │
+│    Ryan         │  ← buddy's display name
 │  ─────────      │
-│   47K tokens    │  ← today
-│   3.2M lifetime │
+│   2h 34m today  │  ← agent active seconds today
+│   47h total     │  ← cumulative since first paired
 │                 │
 └─────────────────┘
 ```
 
 ## Behaviors
 
-- **Buddy mood = today's delegation time.** <15min: just sleeping. 15min–1hr:
-  content idle. 1hr+: energetic idle. Never sad — only "hasn't been used yet
-  today." Idle animation amplitude scales.
+- **Buddy mood = today's agent active time.** 0s: sleeping ("haven't started
+  yet today"). >0s: idle. Never sad — only "hasn't worked yet today." A
+  later iteration may add a 1h+ "energetic" tier; v1 keeps it binary.
+- **What counts as "active":** the desktop heartbeat says `running > 0`
+  or `waiting > 0` — i.e. a session is generating, or blocking on a
+  permission prompt I haven't answered. Open-but-idle sessions don't count.
+  Active time accumulates between snapshots (~10s cadence) and is capped
+  per-snapshot at 60s so a BLE drop doesn't credit a phantom hour.
 - **BtnA cycles species** (current behavior, keep). Species sound flashes for
   ~3s in the stats area on press, then fades back to delegation/tokens.
 - **End-of-day wind-down.** After 9pm (configurable): buddy yawns + screen
@@ -53,15 +59,16 @@ anti-FOMO.
 
 ### New module
 
-- `src/daystats.h` — header-only, NVS-backed. Tracks today's delegation
-  seconds + tokens today + all-time tokens. Auto-resets when RTC date
-  changes. Loaded at boot so reboots don't wipe progress.
+- `src/daystats.h` — header-only, NVS-backed. Tracks today's agent active
+  seconds + lifetime total. Daily reset at local midnight via the M5 RTC
+  (set by the desktop's `time` message on connect). Loaded at boot so
+  reboots don't wipe progress.
 
 ### Refactor
 
 - `src/main.cpp` grows from ~50 lines to ~150. Adds: BLE init, BLE poll →
   daystats update, derive buddy state from Claude session state, render
-  delegation time + tokens text below buddy, wind-down hour check.
+  agent active time text below buddy, wind-down hour check.
 
 ## Implementation phases (one commit each)
 
@@ -69,9 +76,10 @@ anti-FOMO.
 |---|---|---|
 | A | BLE bridge revived | Pair with desktop, stays connected |
 | B | Buddy state from Claude (busy/idle) | Trigger Claude work → buddy goes busy |
-| C | `daystats` + delegation time + tokens today + all-time | Numbers update live, persist across reboot |
-| D | Buddy mood reflects daystats | Idle amplitude scales with today's delegation |
+| C | `daystats` + agent today + total | Numbers update live, persist across reboot |
+| D | Buddy mood reflects daystats | Buddy sleeps if no agent time today |
 | E | End-of-day wind-down | RTC says 9pm → buddy yawns |
+| F | Drive metric off agent active time | Replaces tokens-based phase D |
 
 Each phase is small enough to test in isolation. Adjust between phases.
 
