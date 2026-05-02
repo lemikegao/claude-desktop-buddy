@@ -336,8 +336,12 @@ static uint8_t personaFromState() {
   // Wind-down hours: buddy is sleepy regardless of today's tokens. (Live
   // sessions above already returned, so this only applies when otherwise
   // idle — late-night work still shows busy/attention.)
+  // Owl is nocturnal — its sleep window is daytime (9am–9pm) instead.
   int h = hourOfDay();
-  if (h >= WINDDOWN_HOUR_YAWN) return P_SLEEP;
+  bool nocturnal = strcmp(buddySpeciesName(), "owl") == 0;
+  bool sleepHours = nocturnal ? (h >= 9 && h < WINDDOWN_HOUR_YAWN)
+                              : (h >= WINDDOWN_HOUR_YAWN);
+  if (sleepHours) return P_SLEEP;
   // No live session — pick mood from today's activity:
   //   0 agent-seconds         → P_SLEEP  ("no work yet today")
   //   ≥ ENERGETIC_THRESHOLD_S → P_HEART  ("buddy is pleased, day went well")
@@ -345,7 +349,7 @@ static uint8_t personaFromState() {
   // Pre-heartbeat (`!Seen`) we don't know yet, so fall through to P_IDLE
   // rather than appear sleepy on a blank slate. Energetic doesn't need
   // the seen-gate because today_s == 0 < threshold pre-heartbeat anyway.
-  if (daystatsSeen() && daystatsAgentTodayS() == 0) return P_SLEEP;
+  if (!nocturnal && daystatsSeen() && daystatsAgentTodayS() == 0) return P_SLEEP;
   if (daystatsAgentTodayS() >= ENERGETIC_THRESHOLD_S) return P_HEART;
   return P_IDLE;
 }
