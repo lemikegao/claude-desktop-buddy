@@ -252,14 +252,17 @@ inline const char* ownerName() { return _ownerName; }
 
 inline uint8_t speciesIdxLoad() {
   _prefs.begin("buddy", true);
-  uint8_t v = _prefs.getUChar("species", 0xFF);
+  // Key bumped to "species2" when the SPECIES_TABLE order changed (cat
+  // moved to index 0 to make Bauble the default). Old "species" values
+  // would index into the wrong species, so we ignore them on upgrade.
+  uint8_t v = _prefs.getUChar("species2", 0xFF);
   _prefs.end();
   return v;
 }
 
 inline void speciesIdxSave(uint8_t idx) {
   _prefs.begin("buddy", false);
-  _prefs.putUChar("species", idx);
+  _prefs.putUChar("species2", idx);
   _prefs.end();
 }
 
