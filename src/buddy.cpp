@@ -68,6 +68,22 @@ void buddySetCursor(int x, int y) {
 void buddySetColor(uint16_t fg)   { _tgt->setTextColor(fg, BUDDY_BG); }
 void buddyPrint(const char* s)    { _tgt->setTextSize(_scale); _tgt->print(s); }
 
+// HEART persona color picker. Default (rainbow off) is BUDDY_HEART pink so
+// every species' rising-heart loop reads the same as before. Rainbow on
+// (set by main when today's agent time crosses the IDEAL threshold) cycles
+// each heart through ROYGBIV; (t/3 + i) makes each heart hue-shift as it
+// rises, ~600ms per color step at TICK_MS=200.
+static bool _heartRainbow = false;
+void buddySetHeartRainbow(bool on) { _heartRainbow = on; }
+uint16_t buddyHeartColor(uint32_t t, int i) {
+  if (!_heartRainbow) return BUDDY_HEART;
+  static const uint16_t PALETTE[] = {
+    BUDDY_RED, BUDDY_YEL, BUDDY_GREEN, BUDDY_CYAN, BUDDY_BLUE, BUDDY_PURPLE,
+  };
+  static const uint8_t N = sizeof(PALETTE) / sizeof(PALETTE[0]);
+  return PALETTE[((t / 3) + (uint32_t)i) % N];
+}
+
 // ──────────────── species registry ────────────────
 extern const Species CAPYBARA_SPECIES;
 extern const Species DUCK_SPECIES;

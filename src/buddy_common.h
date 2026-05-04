@@ -35,3 +35,10 @@ void buddyPrintSprite(const char* const* lines, uint8_t nLines, int yOffset, uin
 void buddySetCursor(int x, int y);
 void buddySetColor(uint16_t fg);
 void buddyPrint(const char* s);
+
+// HEART persona: per-heart color picker for the rising-heart loop.
+// Returns BUDDY_HEART (pink) at the base tier, or a rainbow-cycling
+// color when main has flipped on the "ideal day" flag via
+// buddySetHeartRainbow (declared in buddy.h). (t, i) cycles colors
+// over time so each heart hue-shifts as it rises.
+uint16_t buddyHeartColor(uint32_t t, int i);

@@ -82,13 +82,14 @@ const int      WINDDOWN_HOUR_SLEEP   = 22;   // 10pm
 const uint8_t  WINDDOWN_BRIGHT_YAWN  = 60;
 const uint8_t  WINDDOWN_BRIGHT_SLEEP = 30;
 
-// Energetic mood: when no session is currently doing anything but the agent
-// has racked up enough active time today, the buddy switches from plain
-// idle to the heart persona ("floating hearts" — buddy looks pleased with
-// the day). Picked 2h as a real-workday signal: hits on productive days,
-// misses on slow ones. Tune to taste; goal is for it to fire on roughly
-// 40-60% of working days. Less = wallpaper; more = becomes mythical.
+// Two-tier "good day" mood ladder:
+//   ≥ ENERGETIC (2h) → HEART persona, pink hearts ("solid day, well done")
+//   ≥ IDEAL    (4h) → HEART persona, rainbow hearts ("ideal day — crushed it")
+// 2h hits on productive days, 4h is the aspirational target — same persona
+// art at both tiers, only the rising-heart color differs (see buddyHeartColor
+// in buddy.cpp). Less = wallpaper; more = mythical.
 const uint32_t ENERGETIC_THRESHOLD_S = 2UL * 3600;
+const uint32_t IDEAL_THRESHOLD_S     = 4UL * 3600;
 
 static const char* speciesSound(const char* name) {
   if (!strcmp(name, "capybara")) return "squee!";
@@ -582,6 +583,12 @@ void loop() {
   // Pass the live persona so ATTENTION holds the screen on (see comment
   // in maybeSleep() for why busy/dizzy don't).
   maybeSleep(persona);
+
+  // Heart persona has two tiers: pink (default) at ≥ENERGETIC, rainbow at
+  // ≥IDEAL. Persona itself is just P_HEART in both cases — the buddy reads
+  // this flag inside its rising-heart loop. Set every loop so it tracks
+  // today_s as it ticks past the threshold.
+  buddySetHeartRainbow(daystatsAgentTodayS() >= IDEAL_THRESHOLD_S);
 
   // buddyTick is internally throttled to 5fps and clears its own region.
   // It now writes into buddySpr (not spr) thanks to buddySetRenderTarget.

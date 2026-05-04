@@ -15,6 +15,10 @@ void buddySetSpecies(const char* name);
 void buddySetSpeciesIdx(uint8_t idx);
 void buddyNextSpecies();
 void buddySetPeek(bool peek);
+// Toggle the HEART persona's rising-heart color from solid pink (false)
+// to rainbow cycling (true). Set by main once per frame from today's
+// active-time vs IDEAL threshold; read inside each species' doHeart.
+void buddySetHeartRainbow(bool on);
 uint8_t buddySpeciesIdx();
 uint8_t buddySpeciesCount();
 const char* buddySpeciesName();

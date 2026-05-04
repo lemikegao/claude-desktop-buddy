@@ -211,13 +211,13 @@ static void doHeart(uint32_t t) {
   uint8_t beat = (t / 5) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, Y_BOB[beat], 0xFD20);
 
-  buddySetColor(BUDDY_HEART);
   for (int i = 0; i < 6; i++) {
     int phase = (t + i * 3) % 18;
     int y = BUDDY_Y_OVERLAY + 16 - phase;
     if (y < -2 || y > BUDDY_Y_BASE) continue;
     int x = BUDDY_X_CENTER - 22 + i * 8 + ((phase / 3) & 1) * 2 - 1;
     buddySetCursor(x, y);
+    buddySetColor(buddyHeartColor(t, i));
     buddyPrint("v");
   }
 }
