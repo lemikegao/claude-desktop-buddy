@@ -7,6 +7,21 @@ extern M5Canvas spr;
 
 namespace cat {
 
+// Bauble's pink top hat — drawn as an overlay after the body sprite so it
+// can render in its own color. Crown sits at sprite line 0, brim at line 1.
+// In awake poses the brim covers the ears (top hat on the head); in sleep
+// the curled cat's head is at line 2, so the hat naturally floats above.
+// yOff / xOff mirror whatever transform the body uses for the current frame
+// (jump Y_SHIFT, heart Y_BOB, attention shake, dizzy X_SHIFT) so the hat
+// rides along with the cat.
+static void drawHat(int yOff, int xOff = 0) {
+  static const char* const HAT[2] = {
+    "   .---.    ",   // crown
+    "  _|___|_   "    // brim, wider than the head
+  };
+  buddyPrintSprite(HAT, 2, yOff, BUDDY_HEART, xOff);
+}
+
 // ─── SLEEP ───  ~12s cycle, 6 poses (curled loaf, breathing, twitching tail)
 static void doSleep(uint32_t t) {
   static const char* const LOAF[5]     = { "            ", "            ", "   .-..-.   ", "  ( -.- )   ", "  `------`~ " };
@@ -27,6 +42,7 @@ static void doSleep(uint32_t t) {
   };
   uint8_t beat = (t / 5) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, 0, 0xC2A6);
+  drawHat(0);
 
   // Z particles drift up-right (3 staggered streams)
   int p1 = (t)     % 12;
@@ -69,15 +85,18 @@ static void doIdle(uint32_t t) {
   };
   uint8_t beat = (t / 5) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, 0, 0xC2A6);
+  drawHat(0);
 }
 
 // ─── BUSY ───  ~10s cycle, 6 poses + dot ticker (knocking-things-off-table energy)
 static void doBusy(uint32_t t) {
-  static const char* const PAW_UP[5]  = { "      .     ", "   /\\_/\\    ", "  ( o   o ) ", "  (  w   )/ ", "  (\")_(\")   " };
-  static const char* const PAW_TAP[5] = { "    .       ", "   /\\_/\\    ", "  ( o   o ) ", "  (  w   )_ ", "  (\")_(\")   " };
+  // Original line-0 paw-action dots are covered by the hat overlay; the dot
+  // ticker at +22 is the surviving animation cue for this state.
+  static const char* const PAW_UP[5]  = { "            ", "   /\\_/\\    ", "  ( o   o ) ", "  (  w   )/ ", "  (\")_(\")   " };
+  static const char* const PAW_TAP[5] = { "            ", "   /\\_/\\    ", "  ( o   o ) ", "  (  w   )_ ", "  (\")_(\")   " };
   static const char* const STARE[5]   = { "            ", "   /\\_/\\    ", "  ( O   O ) ", "  (  w   )  ", "  (\")_(\")   " };
-  static const char* const NUDGE[5]   = { "    o       ", "   /\\_/\\    ", "  ( o   o ) ", "  ( -w   )  ", "  (\")_(\")   " };
-  static const char* const SHOVE[5]   = { "  o         ", "   /\\_/\\    ", "  ( o   o ) ", "  (-w    )  ", "  (\")_(\")   " };
+  static const char* const NUDGE[5]   = { "            ", "   /\\_/\\    ", "  ( o   o ) ", "  ( -w   )  ", "  (\")_(\")   " };
+  static const char* const SHOVE[5]   = { "            ", "   /\\_/\\    ", "  ( o   o ) ", "  (-w    )  ", "  (\")_(\")   " };
   static const char* const SMUG[5]    = { "            ", "   /\\_/\\    ", "  ( -   - ) ", "  (  w   )  ", "  (\")_(\")   " };
 
   const char* const* P[6] = { PAW_UP, PAW_TAP, STARE, NUDGE, SHOVE, SMUG };
@@ -86,6 +105,7 @@ static void doBusy(uint32_t t) {
   };
   uint8_t beat = (t / 5) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, 0, 0xC2A6);
+  drawHat(0);
 
   static const char* const DOTS[] = { ".  ", ".. ", "...", " ..", "  .", "   " };
   buddySetColor(BUDDY_WHITE);
@@ -110,6 +130,7 @@ static void doAttention(uint32_t t) {
   uint8_t pose = SEQ[beat];
   int xOff = (pose == 4) ? ((t & 1) ? 1 : -1) : 0;
   buddyPrintSprite(P[pose], 5, 0, 0xC2A6, xOff);
+  drawHat(0, xOff);
 
   if ((t / 2) & 1) {
     buddySetColor(BUDDY_YEL);
@@ -125,18 +146,22 @@ static void doAttention(uint32_t t) {
 
 // ─── CELEBRATE ───  ~5s cycle, 6 poses + confetti rain (zoomies)
 static void doCelebrate(uint32_t t) {
+  // Original JUMP/PEAK/POSE arms at line 0 are covered by the hat; the body
+  // Y_SHIFT bounce + confetti rain still carry the celebration feel, and
+  // the hat hops with the body since drawHat receives the same yOffset.
   static const char* const CROUCH[5]  = { "            ", "   /\\_/\\    ", "  ( ^   ^ ) ", "  (  W   )  ", " /(\")_(\")\\  " };
-  static const char* const JUMP[5]    = { "  \\^   ^/   ", "    /\\_/\\   ", "  ( ^   ^ ) ", "  (  W   )  ", "  (\")_(\")   " };
-  static const char* const PEAK[5]    = { "  \\^   ^/   ", "    /\\_/\\   ", "  ( * * * ) ", "  (  W   )  ", "  (\")_(\")~  " };
+  static const char* const JUMP[5]    = { "            ", "    /\\_/\\   ", "  ( ^   ^ ) ", "  (  W   )  ", "  (\")_(\")   " };
+  static const char* const PEAK[5]    = { "            ", "    /\\_/\\   ", "  ( * * * ) ", "  (  W   )  ", "  (\")_(\")~  " };
   static const char* const SPIN_L[5]  = { "            ", "   /\\_/\\    ", "  ( <   < ) ", "  (  W   ) /", " ~(\")_(\")   " };
   static const char* const SPIN_R[5]  = { "            ", "   /\\_/\\    ", "  ( >   > ) ", " \\(  W   )  ", "  (\")_(\")~  " };
-  static const char* const POSE[5]    = { "    \\o/     ", "   /\\_/\\    ", "  ( ^   ^ ) ", " /(  W   )\\ ", "  (\")_(\")   " };
+  static const char* const POSE[5]    = { "            ", "   /\\_/\\    ", "  ( ^   ^ ) ", " /(  W   )\\ ", "  (\")_(\")   " };
 
   const char* const* P[6] = { CROUCH, JUMP, PEAK, SPIN_L, SPIN_R, POSE };
   static const uint8_t SEQ[] = { 0,1,2,1,0, 3,4,3,4, 0,1,2,1,0, 5,5 };
   static const int8_t Y_SHIFT[] = { 0,-3,-6,-3,0, 0,0,0,0, 0,-3,-6,-3,0, 0,0 };
   uint8_t beat = (t / 3) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, Y_SHIFT[beat], 0xC2A6);
+  drawHat(Y_SHIFT[beat]);
 
   static const uint16_t cols[] = { BUDDY_YEL, BUDDY_HEART, BUDDY_CYAN, BUDDY_WHITE, BUDDY_GREEN };
   for (int i = 0; i < 6; i++) {
@@ -163,6 +188,7 @@ static void doDizzy(uint32_t t) {
   static const int8_t X_SHIFT[] = { -3,3,-3,3, 0,0, -3,3,-3,3, 0,0, 0,0 };
   uint8_t beat = (t / 4) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, 0, 0xC2A6, X_SHIFT[beat]);
+  drawHat(0, X_SHIFT[beat]);
 
   static const int8_t OX[] = { 0, 5, 7, 5, 0, -5, -7, -5 };
   static const int8_t OY[] = { -5, -3, 0, 3, 5, 3, 0, -3 };
@@ -191,6 +217,7 @@ static void doHeart(uint32_t t) {
   static const int8_t Y_BOB[] = { 0,-1,0,-1, 0,-1,0, -1,0,0, -1,0,0,0, -1,0,-1,0, -1,0 };
   uint8_t beat = (t / 5) % sizeof(SEQ);
   buddyPrintSprite(P[SEQ[beat]], 5, Y_BOB[beat], 0xC2A6);
+  drawHat(Y_BOB[beat]);
 
   for (int i = 0; i < 5; i++) {
     int phase = (t + i * 4) % 16;
